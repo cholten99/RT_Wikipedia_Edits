@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Latest Wikipedia Article Edits</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 1em;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-top: 1em;
+      table-layout: fixed;
+    }
+    th, td {
+      padding: 0.5em;
+      border: 1px solid #ccc;
+      overflow-wrap: break-word;
+    }
+    th {
+      background-color: #f2f2f2;
+    }
+    th:nth-child(1), td:nth-child(1) { width: 10%; }  /* Timestamp */
+    th:nth-child(2), td:nth-child(2) { width: 35%; }  /* Page Title */
+    th:nth-child(3), td:nth-child(3) { width: 20%; }  /* Username */
+    th:nth-child(4), td:nth-child(4) { width: 35%; }  /* Comment */
+
+    a {
+      text-decoration: none;
+      color: #0645ad;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+
+    #stats {
+      margin-top: 1em;
+      font-size: 0.95em;
+      color: #444;
+    }
+  </style>
+</head>
+<body>
+  <h1>Latest Edits on English Wikipedia (Articles Only)</h1>
+  <table>
+    <thead>
+      <tr>
+        <th>Timestamp</th>
+        <th>Page Title</th>
+        <th>Username</th>
+        <th>Edit Summary</th>
+      </tr>
+    </thead>
+    <tbody id="edit-body"></tbody>
+  </table>
+
+  <div id="stats">
+    <p><strong>Repeat Users:</strong> <span id="repeat-users">0%</span> | 
+       <strong>Single-Time Users:</strong> <span id="single-users">100%</span></p>
+  </div>
+
+  <script>
+    const MAX_ROWS = 12;
+    const tbody = document.getElementById('edit-body');
+    const eventSource = new EventSource('https://stream.wikimedia.org/v2/stream/recentchange');
+    const userEditCounts = {};
+    const repeatDisplay = document.getElementById('repeat-users');
+    const singleDisplay = document.getElementById('single-users');
+
+    function updateStats() {
+      const users = Object.keys(userEditCounts);
+      const total = users.length;
+      const repeatCount = users.filter(u => userEditCounts[u] > 1).length;
+      const singleCount = total - repeatCount;
+
+      const repeatPercent = total ? ((repeatCount / total) * 100).toFixed(1) : 0;
+      const singlePercent = total ? ((singleCount / total) * 100).toFixed(1) : 100;
+
+      repeatDisplay.textContent = `${repeatPercent}%`;
+      singleDisplay.textContent = `${singlePercent}%`;
+    }
+
+    eventSource.onmessage = function(event) {
+      const data = JSON.parse(event.data);
+
+      // Filter for English Wikipedia, article namespace, edits, and no bots
+      if (
+        data.wiki !== 'enwiki' ||
+        data.type !== 'edit' ||
+        data.namespace !== 0 ||
+        data.bot
+      ) return;
+
+      const timestamp = new Date(data.timestamp * 1000).toLocaleTimeString();
+      const title = data.title;
+      const user = data.user;
+      const comment = data.comment || '';
+
+      // Track edit count for each user
+      userEditCounts[user] = (userEditCounts[user] || 0) + 1;
+      const displayUser = userEditCounts[user] > 1 ? `${user} (${userEditCounts[user]})` : user;
+
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>${timestamp}</td>
+        <td><a href="https://en.wikipedia.org/wiki/${encodeURIComponent(title)}" target="_blank">${title}</a></td>
+        <td>${displayUser}</td>
+        <td>${comment}</td>
+      `;
+
+      tbody.insertBefore(row, tbody.firstChild);
+
+      // Limit to MAX_ROWS rows
+      while (tbody.rows.length > MAX_ROWS) {
+        tbody.deleteRow(-1);
+      }
+
+      updateStats();
+    };
+
+    eventSource.onerror = function(error) {
+      console.error("EventSource error:", error);
+    };
+  </script>
+</body>
+</html>
+
